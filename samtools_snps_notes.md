@@ -1,5 +1,6 @@
-#Notes on rosy-finch snps using the samtools pipeline
+#Notes on chickadee snps using the samtools pipeline
 -------------------------------------------------------
+## THIS IS HEAVILY MODIFIED FROM DR. ERIK FUNK'S WORK.
 
 # 1. Demultiplexed using the same script as standard pipeline notes
 
