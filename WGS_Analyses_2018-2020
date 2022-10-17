@@ -17,27 +17,6 @@
 # Step 4: merge, genotype, and filter
 # Step 5: Calculate hybrid indexes for all individuals using fixed SNPs
 
-#General how tos
-########################
-#open up new screen
-screen
-
-#escape screen
-CTRL + AD
-
-#see running screens
-screen -list
-
-#reconnect to screen
-screen -r [INSERT SCREEN ID]
-
-#kill screen
-#reconnect to screen and then type "exit"
-
-#kill screen
-screen -X -S [session # you want to kill] quit
-
-#############################
 
 ##### Step 1: Trim & qc
 
@@ -232,18 +211,6 @@ bash merge_bams.sh
 for file in $(cat broken.pipe.chickadee.wgs.txt); do scp /data1/kagr.wgs.chickadee/bam_files/"$file".bam /data1/kagr.wgs.chickadee/trimmed_fastq/; done
 
 bash align-and-sort.sh -i broken.pipe.chickadee.wgs.txt -r /data1/kagr.wgs.chickadee/reference.BCCH.genome.2021/BCCH.reference.final.fasta -t 18 -p /data1/kagr.wgs.chickadee/trimmed_fastq/
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
