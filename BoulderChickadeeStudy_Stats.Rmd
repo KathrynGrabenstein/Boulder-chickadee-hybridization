@@ -75,8 +75,7 @@ The Boulder Chickadee Study is located in Boulder County, CO. Maps show current 
 
 
 ```{r, include= FALSE}
-#register key bc google 
-register_google(key = "XXXXX") [removed]
+
 
 Longitude <- chickadee.nests$Longitude
 Latitude <- chickadee.nests$Latitude
