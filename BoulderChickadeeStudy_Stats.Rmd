@@ -1,0 +1,669 @@
+---
+title: "Boulder Chickadee Study Data Exploration"
+author: "Kathryn Grabenstein"
+date: "12/1/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Study Goals
+
+The Boulder Chickadee Study is a long term study exploring the natural history of black-capped and mountain chickadees in Boudler, CO. The study was established in 2019 with wooden nest boxes mounted throughout Boulder County, CO to encourarge chickadees to breed in the boxes. Boxes help researchers monitor breeding and access nestlings.
+
+The goal of this document is to begin preliminary analysis of breeding. Specifically, to create maps of nest boxes, heat maps of nest box occupancy, and other reproductive output information, such as, timing of breeding, reproductive success, etc. 
+
+```{r, include=FALSE}
+#import libraries
+library(ggplot2)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(smatr)
+library(lme4)
+library(devtools)
+library(dplyr)
+library(lubridate)
+library(raster)
+library(sf)
+
+
+#set working directory
+setwd("~/Documents/Data Analysis/Chapter5")
+
+```
+
+
+```{r, include = FALSE}
+#import data 
+#import ALL nest boxes
+nest.boxes <- read.csv("ChickadeeNestBoxes_ANT - ChickadeeNestBoxes.csv")
+
+#import csv for each years 
+chickadee.nests <- read.csv("ChickadeeNests_2019-2021.csv")
+
+str(chickadee.nests)
+
+#reformat dates to be continuous variable (not string) for clutch initiation, hatch and Day 12
+{chickadee.nests$Hatch.Date <- as.Date(chickadee.nests$Hatch.Date, format = "%d-%b-%y")
+chickadee.nests$Clutch.Initiation <- as.Date(chickadee.nests$Clutch.Initiation, format = "%d-%b-%y")
+chickadee.nests$Day12 <- as.Date(chickadee.nests$Day12, format = "%d-%b-%y")
+}
+
+#calculate julian date to make plotting make sense (MAKE IT MAKE SENSE PLEASE)
+chickadee.nests$Julian <- yday(chickadee.nests$Hatch.Date) 
+
+#calculate julian date to make plotting make sense (MAKE IT MAKE SENSE PLEASE)
+chickadee.nests$Julian.CI <- yday(chickadee.nests$Clutch.Initiation) 
+
+
+
+class(chickadee.nests$Hatch.Date)
+class(chickadee.nests$Clutch.Initiation)
+class(chickadee.nests$Day12)
+
+unique(chickadee.nests$Species)
+unique(chickadee.nests$Site)
+unique(chickadee.nests$Year)
+
+#need to get lat/longs from nest box datasheet
+chickadee.nests <- left_join(chickadee.nests, nest.boxes, by = c('Nest.Box.ID'))
+chickadee.nests
+
+chickadee.nests$Elevation <- as.numeric(chickadee.nests$Elevation)
+chickadee.nests$Year <- factor(chickadee.nests$Year)
+
+#make new variable: nestlings/clutch (proportion eggs)
+chickadee.nests$Prop.Nestlings <- chickadee.nests$Nestlings/chickadee.nests$Clutch.Size
+
+str(chickadee.nests)
+
+
+```
+
+
+
+## Boulder Chickadee Study Maps
+The Boulder Chickadee Study is located in Boulder County, CO. Maps show current nest box locations, as well as where black-capped and mountain chickadees have nested over the past three years.
+
+
+```{r, include= FALSE}
+#register key bc google 
+register_google(key = "AIzaSyCmSK6DOJIIqs2IrbzYQTZaUF9J33GXTFA")
+
+Longitude <- chickadee.nests$Longitude
+Latitude <- chickadee.nests$Latitude
+
+Longitude.2 <- nest.boxes$Longitude
+Latitude.2 <- nest.boxes$Latitude
+
+#get map
+chickadeemap <- get_map(location = c(lon = -105.4, lat = 40), 
+                        maptype= "satellite", 
+                        source ="google", zoom = 10, 
+                        color = 'bw' )
+#get map and make rectangular
+
+chickadeemap.rectangle <- ggmap(get_map(location = c( -105.35,  40.05), 
+                                zoom=10, scale="auto", color = 'bw', maptype= "satellite", 
+                                source ="google" )) +
+                                scale_x_continuous(limits = c(-105.0,-105.7), expand = c(0, 0)) +
+                                scale_y_continuous(limits = c(39.9,40.2), expand = c(0, 0))
+chickadeemap.rectangle
+
+
+  
+
+heat.map.2 <-  get_map(location = c(lon = -105.30, lat = 40), 
+                        maptype= "satellite", 
+                        source ="google", zoom = 12, 
+                        color = 'bw' )
+
+heat.map.3 <-  get_map(location = c(lon = -105.53, lat = 40.03), 
+                        maptype= "satellite", 
+                        source ="google", zoom = 12, 
+                        color = 'bw' )
+
+```
+
+## Map of all nest boxes (n = 373)
+```{r maps, echo = FALSE}
+#Map of ALL nest boxes in Boulder Chickadee Study
+
+
+ggmap(chickadeemap)
+
+#plot points
+{mapPoints<- ggmap(chickadeemap) + 
+  geom_point(aes(x = Longitude.2, y = Latitude.2), 
+             data = nest.boxes, size = 4, shape = 21, alpha = 0.8, fill = "royalblue1") 
+mapPoints
+}
+
+```
+
+```{r, elevation cross section, make the raster} 
+
+library(raster)
+library(rgdal)
+library(ggplot2)
+library(sp)
+install.packages("topoDistance")
+library(topoDistance)
+
+raster <- raster("USGS_13_n41w106_20220331.tif")
+plot(raster)
+
+raster.2 <- raster("USGS_13_n40w106_20220216.tif")
+plot(raster.2)
+
+merged <- merge(raster, raster.2)
+plot(merged)
+
+box <- as(extent(-105.7, -105.1, 39.8, 40.15), 'SpatialPolygons')
+cropped.raster <- crop(x = merged, y = box)
+plot(cropped.raster)
+
+#check coordinate reference system
+raster@crs
+
+#format points for raster plotting
+nest.boxes$Latitude <- as.numeric(nest.boxes$Latitude)
+nest.boxes$Longitude  <- as.numeric(nest.boxes$Longitude)
+
+nest.boxes <- na.omit(nest.boxes) 
+
+
+# plot banding locations
+{points <- cbind(nest.boxes$Longitude , nest.boxes$Latitude )
+nestbox.points = SpatialPoints(points, proj4string=CRS("+init=epsg:4326"))
+pts3.nestboxes = spTransform(nestbox.points, projection(raster))
+head(coordinates(pts3.nestboxes))
+}
+
+#make line for transect
+to.draw <- SpatialPoints(rbind(c(-105.6, 40.05), c(-105.2, 40)))
+sp_line <- as(to.draw,"SpatialLines")
+
+myCol <- grey.colors(6)
+
+{plot(cropped.raster, col = myCol)
+plot(pts3.nestboxes, add=TRUE)
+plot(sp_line, add = TRUE)
+}
+
+topoProfile(
+  cropped.raster,
+  sp_line,
+  pts = 100,
+  type = "base",
+  singlePlot = FALSE,
+  rows = NULL,
+  cols = NULL,
+  limits = NULL,
+  legendx = "bottomright"
+)
+
+
+
+```
+```{r, plot elevational differences between MOCH and BCCH}
+
+chickadee.nests %>%
+  ggplot(aes(Elevation.x, fill=Species)) +
+  geom_density(alpha=0.2) +
+   theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), axis.line = element_line(colour = "black")) 
+
+```
+
+
+
+
+
+## Maps of chickadee nests
+
+```{r,echo=FALSE}
+#plot nests only, color by species to create heat map
+
+#Map of all nests
+{map.nests <- ggmap(chickadeemap) +
+    geom_point(aes(x = Longitude, y = Latitude, fill = Species), 
+                      data = chickadee.nests, size = 5, alpha = 0.6, shape = 21) +
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue"))
+map.nests
+}
+
+#heat map of points
+{map.nests <- ggmap(chickadeemap) + 
+              geom_point(aes(x = Longitude, y = Latitude, fill = Species), 
+                            data = chickadee.nests, size = 5, alpha = 0.6, shape = 21) +
+              stat_density2d(aes(x = Longitude, y = Latitude, color = Species), 
+                             alpha = 0.8,
+                             data = chickadee.nests) +
+              scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+              scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) 
+            
+map.nests
+}
+
+
+#heat map of points
+{map.nests.2 <- ggmap(chickadeemap) + 
+              geom_point(aes(x = Longitude, y = Latitude, fill = Species), 
+                            data = chickadee.nests, size = 5, alpha = 0.6, shape = 21) +
+              geom_density2d(aes(x = Longitude, y = Latitude, color = Species), 
+                             alpha = 0.4,
+                             data = chickadee.nests) +
+              scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+              scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+              facet_wrap(vars(Year))
+            
+map.nests.2
+}
+
+
+```
+
+## Summary Statistics for Breeding Phenology & Reproductive Success
+
+
+```{r}
+#summary statistics
+#Number of nests per species
+chickadee.nests %>% 
+  group_by(Species) %>% 
+  tally()
+
+#number of nests per year
+chickadee.nests %>% 
+  group_by(Year) %>% 
+  tally()
+
+#number of nests per species per year
+chickadee.nests %>% 
+  group_by(Year, Species) %>% 
+  tally()
+
+
+```
+
+
+
+
+## Breeding Success
+
+```{r}
+#What is average clutch size per species?
+chickadee.nests %>%
+  group_by(Species) %>%
+  summarize(Mean = mean(Clutch.Size, na.rm=TRUE), Median = median(Clutch.Size, na.rm=TRUE),
+            sd = sd(Clutch.Size, na.rm=TRUE))
+
+##Does clutch size differ between years?
+chickadee.nests %>%
+  group_by(Year, Species) %>%
+  summarize(Mean = mean(Clutch.Size, na.rm=TRUE), Median = median(Clutch.Size, na.rm=TRUE),
+            sd = sd(Clutch.Size, na.rm=TRUE))
+
+```
+
+
+## Breeding Phenology Plots
+
+### Does clutch size differ between black-capped and mountain chickadees? 
+```{r,echo=FALSE}
+#Does clutch size differ by species?
+
+#clutch size by species
+{violin.chickadee <- ggplot(chickadee.nests, aes(x= Species, y=Clutch.Size, fill = Species)) + 
+    geom_violin() 
+  
+  
+  #add summary statistics
+  violin.chickadee + 
+    geom_boxplot(position=position_dodge(0.9), width=0.2) + 
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    scale_x_discrete(labels = c('Black-capped','Mountain')) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), axis.line = element_line(colour = "black"))
+}
+
+#Does clutch size differ by species?
+#strip chart
+#clutch size by species
+{strip.chickadee <- ggplot(chickadee.nests, aes(x= Species, y=Clutch.Size, fill = Species)) + 
+    #geom_boxplot(width=0.3,lwd=1.5) + 
+    #geom_violin(trim = FALSE) +
+    geom_boxplot(notch = F, alpha = 0)+
+    geom_jitter(position=position_jitter(0.1), size=5, shape = 21, alpha = 0.6) 
+  
+  
+  #add summary statistics
+  strip.chickadee + 
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_classic() +
+    scale_x_discrete(labels = c('Black-capped','Mountain')) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), axis.line = element_line(colour = "black"))
+}
+
+#Does clutch size differ by species?
+#strip chart
+#clutch size by species
+{strip.chickadee.2 <- ggplot(chickadee.nests, aes(x= Species, y=Clutch.Size, fill = Species)) + 
+    #geom_boxplot(width=0.3,lwd=1.5) + 
+    #geom_violin(trim = FALSE) +
+    geom_boxplot(notch = F, alpha = 0)+
+    geom_jitter(position=position_jitter(0.1), size=5, shape = 21, alpha = 0.6) 
+  
+  
+  #add summary statistics
+  strip.chickadee.2 + 
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_classic() +
+    scale_x_discrete(labels = c('Black-capped','Mountain')) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), axis.line = element_line(colour = "black")) +
+    facet_wrap(vars(Year))
+}
+
+
+
+```
+
+### Does clutch size differ by elevation, grouped by species?
+
+```{r,echo= FALSE}
+
+#Does clutch size differ by elevation, grouped by species?
+#Scatterplot 
+#clutch size by elevation 
+{scatter.chickadee.2 <- ggplot(chickadee.nests, aes(x=Elevation, y=Clutch.Size, fill = Species)) +
+    geom_jitter(size=5, alpha = 0.6, shape = 21, height = 0) +
+    geom_smooth(method = lm, aes(color=Species), fill = "grey") +
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_bw() 
+    #theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          #panel.grid.minor = element_blank(), axis.title.x=element_blank(), 
+         # axis.line = element_line(colour = "black")) +
+    
+    
+scatter.chickadee.2
+}
+
+{scatter.chickadee <- ggplot(chickadee.nests, aes(x=Elevation, y=Clutch.Size, fill = Species)) +
+    geom_jitter(size=5, alpha = 0.6, shape = 21, height =0) +
+    geom_smooth(method = lm, aes(color=Species), fill = "grey") +
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_bw() + 
+    #theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          #panel.grid.minor = element_blank(), axis.title.x=element_blank(), 
+         # axis.line = element_line(colour = "black")) +
+    facet_grid(vars(Year))
+    
+scatter.chickadee
+}
+
+```
+
+
+### Does the proportion of nestlings at Day 12 differ by elevation?
+
+```{r, echo = FALSE}
+#Does the number of proportion of nestlings (to account for diff in number of eggs)
+#differ by elevation?
+
+#Scatterplot 
+#nestlings by elevation 
+{scatter.chickadee.nestling <- ggplot(chickadee.nests, aes(x=Elevation, y=Prop.Nestlings, fill = Species)) +
+    geom_point(size=5, alpha = 0.6, shape = 21) +
+    geom_smooth(method = lm, aes(color=Species), fill = "grey") +
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), 
+          axis.line = element_line(colour = "black")) 
+  
+  scatter.chickadee.nestling
+}
+
+
+#Scatterplot 
+#nestlings by elevation by year
+{scatter.chickadee.nestling.2 <- ggplot(chickadee.nests, aes(x=Elevation, y=Prop.Nestlings, fill = Species)) +
+    geom_point(size=5, alpha = 0.6, shape = 21) +
+    geom_smooth(method = lm, aes(color=Species), fill = "grey") +
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+    theme_bw() + 
+    facet_grid(vars(Year))
+  
+  scatter.chickadee.nestling.2
+}
+
+
+```
+
+### What is average hatch date for species?
+```{r, echo = FALSE }
+data_subset <- chickadee.nests[ , c("Julian")]   
+hatch_date_success <- chickadee.nests[complete.cases(data_subset), ]
+
+
+hatch_date_count <- hatch_date_success %>% 
+  group_by(Species,Year) %>%
+  count(Julian)
+
+
+#need  to make year Factor, not numeric
+hatch_date_count$Year <- factor(hatch_date_count$Year)
+
+
+ggplot(hatch_date_count, aes(x = Julian, y = n, group = Species, fill = Species, color = Species)) +
+ geom_point(size=5, alpha = 0.6, shape = 21) +
+  #geom_smooth() +
+  facet_grid(vars(Species)) +
+  scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1))
+
+
+ggplot(hatch_date_count, aes(x = Julian, y = n, group = Year, color = Year)) +
+ geom_point(aes(shape = Year), size=5, alpha = 0.6) +
+  geom_line(aes(group = Year)) +
+  facet_grid(vars(Species)) +
+  #scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  #scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1)) 
+  
+    
+```
+
+
+### What is average clutch initiation date for species?
+```{r}
+data_subset_2 <- chickadee.nests[ , c("Julian.CI")]   
+CI_date_success <- chickadee.nests[complete.cases(data_subset), ]
+
+
+CI_date_count <- CI_date_success %>% 
+  group_by(Species,Year) %>%
+  count(Julian.CI)
+
+ggplot(CI_date_count, aes(x = Julian.CI, y = n, group = Species, fill = Species, color = Species)) +
+ geom_point(size=5, alpha = 0.6, shape = 21) +
+  geom_smooth() +
+  facet_grid(vars(Species)) +
+  scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank(), axis.line = element_line(colour = "black")) +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1))
+
+
+```
+
+
+
+
+
+
+
+
+
+### What is average hatch date for each species by year?
+```{r, echo = FALSE}
+
+ggplot(hatch_date_count, aes(x = Julian, y = n, fill = Species,  group = Species)) +
+ geom_point(size=5, alpha = 0.6, shape = 21) +
+  geom_line() +
+  facet_grid( Year ~ Species) +
+  scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1)) 
+
+```
+
+
+### How does hatch date vary by elevation?
+
+```{r, echo = FALSE}
+
+{scatter.chickadee.hatch <- ggplot(chickadee.nests, aes(x=Elevation, y=Julian, fill = Species, group = Species)) +
+    geom_point(size=5, alpha = 0.6, shape = 21) +
+    geom_smooth(method = lm, aes(color=Species), fill = "grey") + 
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1))  
+
+  scatter.chickadee.hatch
+}
+
+
+
+{scatter.chickadee.hatch <- ggplot(chickadee.nests, aes(x=Elevation, y= Julian, fill = Species, group = Year)) +
+    geom_point(size=5, alpha = 0.6, shape = 21) +
+    geom_smooth(method = "lm", aes(linetype=Year, color = Species), fill = "grey") + 
+    scale_fill_manual(values = c("rosybrown2", "cornflowerblue")) +
+  scale_color_manual(values = c("rosybrown2", "cornflowerblue")) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 315, vjust = 0.5, hjust=1))  +
+  facet_grid(vars(Species))
+    
+  scatter.chickadee.hatch
+}
+
+
+
+```
+
+
+```{r}
+### Goal is to plot tarsus v HI 
+## What is the relationship between tarsus length and Hybrid index (unscaled)? 
+
+## Import HI for every bird
+snps <- read.csv("wgs_gghybrid_loci_1.csv")
+
+#import sequenced adults
+adults.sequenced <- read.csv("chickadee_wgs_ADULTS.csv")
+
+#import sequenced nestlings
+nestlings.sequenced <- read.csv("Nestlings_to_Exclude.csv")
+
+#import banded adults
+adults.banded <- read_csv("BirdsBanded.csv")
+
+#import banded nestlings
+nestlings.banded <- read.csv("NestlingsBanded.csv")
+
+str(snps)
+str(adults.sequenced)
+str(adults.banded)
+
+adults.banded$`Tarsus.(mm)` <- as.numeric(adults.banded$`Tarsus.(mm)`)
+
+#rename adult sequenced column to join
+names(adults.sequenced)[1] <- 'USGS.Number'
+str(adults.sequenced)
+
+adults.sequenced$USGS.Number <- as.character(adults.sequenced$USGS.Number)
+
+adults.morpho <- left_join(adults.sequenced, adults.banded, by = c('USGS.Number'))
+  
+names(snps)[1] <- 'USGS.Number'
+snps$USGS.Number <- as.character(snps$USGS.Number)
+
+adults.morpho.HI <- left_join(adults.morpho, snps,  by = c('USGS.Number'))
+
+adults.morpho.HI$`Tarsus.(mm)` <- as.numeric(adults.morpho.HI$`Tarsus.(mm)`)
+adults.morpho.HI$hi.h.posterior.mode <- as.numeric(adults.morpho.HI$hi.h.posterior.mode)
+
+
+#Scatterplot 
+#tarsus by HI
+{scatter.tarsus.hi <- ggplot(adults.morpho.HI, aes(x=`Tarsus.(mm)`, y=hi.h.posterior.mode, fill = Species)) +
+    geom_point(size=5, alpha = 0.6, shape = 21) +
+    #geom_boxplot(notch = F, alpha = 0) +
+    scale_fill_manual(values = c("rosybrown2","cornflowerblue","cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "cornflowerblue","cornflowerblue")) +
+    geom_vline(xintercept = 17.88) +
+    geom_vline(xintercept = 19.81) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), 
+          axis.line = element_line(colour = "black")) 
+  
+  scatter.tarsus.hi
+}
+
+
+{scatter.tarsus <- ggplot(adults.banded, aes(x=Species, y=`Tarsus.(mm)`, fill = Species)) +
+    geom_jitter(size=5, alpha = 0.6, shape = 21) +
+    geom_boxplot(notch = F, alpha = 0) +
+    scale_fill_manual(values = c("rosybrown2","purple","cornflowerblue")) +
+    scale_color_manual(values = c("rosybrown2", "purple","cornflowerblue")) +
+    theme_bw() + 
+    theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), axis.title.x=element_blank(), 
+          axis.line = element_line(colour = "black")) 
+  
+  scatter.tarsus
+}
+
+
+```
+
+
+
+```{r}
+adults.banded$Species <- as.factor(adults.banded$Species)
+
+
+adults.banded %>% 
+  dplyr::group_by(Species) %>%
+  dplyr::summarize(mean_tarsus = mean(`Tarsus.(mm)`, na.rm = TRUE))
+
+
+```
+
+
+
+
