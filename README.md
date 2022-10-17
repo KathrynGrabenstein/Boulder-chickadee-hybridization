@@ -1,6 +1,6 @@
-This repository contains the shell scripts used for whole genome sequence analysis from demultiplexing to variant calls as well as a variety of other analyses related to population and phylogenomics.
+This repository contains the shell scripts used for whole genome sequence analysis from demultiplexing to variant calls as well as a variety of other analyses related to breeding demography of black-capped and mountain chickadees in Boulder County, CO.
 
-Notes on the first iteration and a description of the pipeline on the rosy-finch data is located in rosyfinch_notes.md
+The scripts used in this pipeline for genomic analyses are borrowed heavily from Dr. Erik Funk.
 
 The call of any script without arguments will show a short description and the arguments list.
 
